@@ -1,0 +1,23 @@
+{
+  "skill_name": "skillvet",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I just downloaded a skill called 'pdf-helper' from a random GitHub gist and I'm about to drop it into ~/.claude/skills/. Can you check it's not going to steal anything before I install it? It's at ./samples/malicious-pdf-helper",
+      "expected_output": "Runs scan_skill.py, reads the files, and returns a DO NOT INSTALL verdict citing the SSH-key read + POST to a hardcoded IP (exfiltration), curl|bash remote exec, env harvesting, the auto-running !`curl ... $(env|base64)` injection, the Bash(*) grant, and the 'ignore previous instructions / don't tell the user' prompt injection.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "audit this skill for me before I trust it: ./samples/benign-csv-cleaner",
+      "expected_output": "Runs the scanner, finds no malicious patterns, returns SAFE TO INSTALL with at most a note that it pre-approves Bash(python3 scripts/clean.py *) — scoped and fine — plus the caveat that static analysis can't prove safety.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "here's a skills marketplace repo I cloned with a bunch of skills in a skills/ folder. Scan all of them and tell me which ones are dangerous and which are fine, in a table I can skim.",
+      "expected_output": "Enumerates each SKILL.md, scans each skill directory separately, and produces a Markdown report with a per-skill severity table and an overall verdict per skill, attributing findings to the right skill.",
+      "files": []
+    }
+  ]
+}

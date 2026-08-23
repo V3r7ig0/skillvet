@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS launchd agent for the skillvet watcher.
+
+  Setup:
+    1. Edit the two REPLACE_ME paths below:
+         - the path to python3 (run `which python3`)
+         - the absolute path to skillvet_watch.py in your clone
+    2. Copy this file to ~/Library/LaunchAgents/com.skillvet.watch.plist
+    3. Load it:   launchctl load ~/Library/LaunchAgents/com.skillvet.watch.plist
+    4. Stop it:   launchctl unload ~/Library/LaunchAgents/com.skillvet.watch.plist
+
+  It watches ~/.claude/skills by default and restarts if it crashes.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.skillvet.watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>REPLACE_ME/python3</string>
+        <string>REPLACE_ME/skillvet/watcher/skillvet_watch.py</string>
+        <string>watch</string>
+        <string>--interval</string>
+        <string>2</string>
+        <string>--fail-on</string>
+        <string>high</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/skillvet.watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/skillvet.watch.err</string>
+</dict>
+</plist>

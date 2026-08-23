@@ -1,0 +1,27 @@
+# systemd user service for the skillvet watcher (Linux).
+#
+# Setup:
+#   1. Edit ExecStart below: set the absolute path to python3 and to
+#      skillvet_watch.py in your clone.
+#   2. Copy to ~/.config/systemd/user/skillvet-watch.service
+#   3. Enable + start:
+#        systemctl --user daemon-reload
+#        systemctl --user enable --now skillvet-watch.service
+#   4. Logs:   journalctl --user -u skillvet-watch -f
+#   5. Stop:   systemctl --user disable --now skillvet-watch.service
+#
+# Desktop notifications need a running graphical session (notify-send).
+
+[Unit]
+Description=skillvet — watch installed Agent Skills and quarantine risky ones
+After=default.target
+
+[Service]
+Type=simple
+# REPLACE the two paths below:
+ExecStart=/usr/bin/python3 %h/skillvet/watcher/skillvet_watch.py watch --interval 2 --fail-on high
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

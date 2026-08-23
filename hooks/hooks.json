@@ -1,0 +1,16 @@
+{
+  "description": "skillvet — automatically scan installed skills at session start and warn about risky ones.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/scan_installed_skills.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
