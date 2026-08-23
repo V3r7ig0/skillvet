@@ -40,6 +40,27 @@ import zipfile
 
 SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
+# The console output carries a few non-ASCII characters, and a scanned path
+# can carry any character at all. On a console whose encoding cannot
+# represent them -- cp1252/cp1254/cp932 are the default on non-English
+# Windows -- print() raises UnicodeEncodeError and the process dies AFTER
+# the scan has finished, with exit code 1. A caller cannot tell that apart
+# from "findings were found", so a CI step reads a crash as a result.
+_ASCII_FALLBACK = {"\u2014": "-", "\u2192": "->", "\u2717": "x", "\u2713": "v",
+                   "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'}
+
+
+def out(text=""):
+    """print() that degrades characters instead of the run."""
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        text.encode(enc)
+    except (UnicodeEncodeError, LookupError):
+        for ch, rep in _ASCII_FALLBACK.items():
+            text = text.replace(ch, rep)
+        text = text.encode(enc, "replace").decode(enc, "replace")
+    print(text)
+
 # File extensions we treat as executable/script content (deeper checks apply).
 CODE_EXTS = {".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts",
              ".rb", ".pl", ".php", ".ps1", ".psm1", ".bat", ".cmd", ".fish"}
@@ -1078,25 +1099,25 @@ def main(argv):
             f.write(render_sarif(target_name, ordered))
 
     if not args.quiet:
-        print(f"Scanned {file_count} files in '{target_name}'.")
-        print(f"Risk score: {score}/100 — {band} → {recommendation}")
-        print(f"Findings: critical={counts['critical']} high={counts['high']} "
+        out(f"Scanned {file_count} files in '{target_name}'.")
+        out(f"Risk score: {score}/100 — {band} → {recommendation}")
+        out(f"Findings: critical={counts['critical']} high={counts['high']} "
               f"medium={counts['medium']} low={counts['low']} info={counts['info']}"
               + (f"  (suppressed {len(suppressed)})" if suppressed else ""))
-        print(f"Verdict: {verdict(counts)}")
+        out(f"Verdict: {verdict(counts)}")
         if llm_summary:
-            print(f"LLM: {llm_summary.get('verdict','?')} (conf {llm_summary.get('confidence','?')}) — "
+            out(f"LLM: {llm_summary.get('verdict','?')} (conf {llm_summary.get('confidence','?')}) — "
                   f"{llm_summary.get('reasoning','')} "
                   f"[dismissed {len(llm_summary.get('dismissed',[]))}, added {llm_summary.get('added',0)}]")
         if not args.json_out and not args.md_out and not args.sarif_out:
             for f in ordered:
                 loc = f["file"] if f["line"] in (0, None) else f'{f["file"]}:{f["line"]}'
-                print(f'  [{f["severity"].upper():8}] {f["rule"]:20} {loc}  {f["title"]}')
+                out(f'  [{f["severity"].upper():8}] {f["rule"]:20} {loc}  {f["title"]}')
         if args.show_suppressed and suppressed:
-            print("Suppressed by baseline:")
+            out("Suppressed by baseline:")
             for f in suppressed:
                 loc = f["file"] if f["line"] in (0, None) else f'{f["file"]}:{f["line"]}'
-                print(f'  [suppressed] {f["rule"]:20} {loc}  {f["title"]}')
+                out(f'  [suppressed] {f["rule"]:20} {loc}  {f["title"]}')
 
     fail_lvl = SEVERITY_ORDER[args.fail_on]
     if any(SEVERITY_ORDER[f["severity"]] >= fail_lvl for f in findings):
