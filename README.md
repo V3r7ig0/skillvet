@@ -11,6 +11,8 @@ plugin hook that scans installed skills at startup), and as a live install gate
 (a background watcher that quarantines a risky skill until you approve it). The
 install gate is the part most scanners don't have.
 
+![skillvet quarantining a malicious skill at install time](assets/skillvet-demo.gif)
+
 > A pattern match is a reason to look, not proof of malice, and a clean scan is
 > not proof of safety. skillvet is a first line of defense, meant to be paired
 > with human judgment.
