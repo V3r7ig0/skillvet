@@ -1,10 +1,10 @@
 # skillvet
 
 skillvet is a security scanner and install-time gate for Agent Skills (Claude
-Code / Cowork). It audits a skill — its `SKILL.md`, bundled scripts, and
-resources — for malicious code, data exfiltration, prompt-injection instructions,
+Code / Cowork). It audits a skill (its `SKILL.md`, bundled scripts, and
+resources) for malicious code, data exfiltration, prompt-injection instructions,
 dangerous shell commands, obfuscation, over-broad permissions, and supply-chain
-risk, then returns a 0–100 risk score and an install recommendation.
+risk. It returns a 0 to 100 risk score and an install recommendation.
 
 It runs three ways: on demand (a `/skillvet` command or CLI), per session (a
 plugin hook that scans installed skills at startup), and as a live install gate
@@ -38,7 +38,7 @@ An empirical study of ~31k public skills found ~26% carried at least one
 vulnerability and ~5% showed high-severity, likely-malicious patterns. Treat an
 unreviewed third-party skill like any unreviewed open-source dependency.
 
-## How it works — two layers
+## How it works: two layers
 
 1. Static engine (`scan_skill.py`): deterministic, dependency-free Python
    (standard library only). Regex rules plus a Python AST taint pass (secret-read
@@ -150,8 +150,8 @@ Positioning against the leading Agent-Skill scanners. Legend: ✓ yes · ~ parti
 | YARA signatures | ✓ (opt) | ✓ | ✓ | ~ |
 | Live CVE lookup (OSV.dev) | ✓ (opt) | ✓ | ✗ | ✗ |
 | Coded LLM semantic stage | ✓ | ✓ | ✓ | ✗ |
-| Multi-provider LLM | ✓ | ✓ | ✓ | — |
-| Works with **no API key** (host agent as LLM) | ✓ | ✗ | ✗ | — |
+| Multi-provider LLM | ✓ | ✓ | ✓ | n/a |
+| Works with **no API key** (host agent as LLM) | ✓ | ✗ | ✗ | n/a |
 | Dependency-free static core | ✓ | ~ | ✗ (3 API keys) | ~ |
 | **Install-time gate + quarantine** | ✓ | ✗ | ✗ | ✗ |
 | **Continuous / post-install monitoring** | ✓ | ✗ | ✗ | ✗ |
@@ -233,9 +233,9 @@ python3 watcher/skillvet_watch.py reject  pdf-helper  # delete it permanently
 
 Run it continuously (starts at every login/boot) with the setup for each OS:
 
-- macOS — [`watcher/com.skillvet.watch.plist`](watcher/com.skillvet.watch.plist) (launchd agent)
-- Linux — [`watcher/skillvet-watch.service`](watcher/skillvet-watch.service) (systemd user service)
-- Windows — [`watcher/windows/install-task.ps1`](watcher/windows/install-task.ps1) registers a hidden Scheduled Task that starts the watcher at logon. Run once:
+- macOS: [`watcher/com.skillvet.watch.plist`](watcher/com.skillvet.watch.plist) (launchd agent)
+- Linux: [`watcher/skillvet-watch.service`](watcher/skillvet-watch.service) (systemd user service)
+- Windows: [`watcher/windows/install-task.ps1`](watcher/windows/install-task.ps1) registers a hidden Scheduled Task that starts the watcher at logon. Run once:
   ```powershell
   powershell -ExecutionPolicy Bypass -File watcher\windows\install-task.ps1
   ```
@@ -259,9 +259,9 @@ makes it notify-only.
 
 | Level | Mechanism | When it runs | Blocks a bad skill? |
 |-------|-----------|--------------|---------------------|
-| On-demand | `/skillvet` command / CLI | when you ask | no — advisory report |
-| Per-session | plugin `SessionStart` hook | at each session start | no — warns in-session |
-| **Install gate** | **watcher + quarantine daemon** | **the moment a skill is added/changed** | **yes — moves it to quarantine until you approve** |
+| On-demand | `/skillvet` command / CLI | when you ask | no, advisory report |
+| Per-session | plugin `SessionStart` hook | at each session start | no, warns in-session |
+| **Install gate** | **watcher + quarantine daemon** | **the moment a skill is added/changed** | **yes, moves it to quarantine until you approve** |
 
 ### As a standalone CLI (no agent needed)
 
@@ -291,11 +291,12 @@ usage/IO error. Drop it into CI to fail a PR that adds a risky skill.
 ```
 $ python3 scan_skill.py samples/malicious-pdf-helper
 Scanned 2 files in 'malicious-pdf-helper'.
-Findings: critical=3 high=10 medium=4 low=1 info=0
-Verdict: CRITICAL — do NOT install without a full manual review.
+Risk score: 100/100, CRITICAL -> DO NOT INSTALL
+Findings: critical=5 high=6 medium=7 low=1 info=0
+Verdict: CRITICAL: do NOT install without a full manual review. Malicious-intent patterns present.
+  [CRITICAL] YR-Skillvet_Credential_Stealer scripts/setup.py    Reads private keys / credential stores together with network egress
   [CRITICAL] EX-SECRET-FILES   scripts/setup.py:3  Access to SSH keys / cloud credentials / secret stores
-  [CRITICAL] EX-TAINT-EXFIL    scripts/setup.py:5  Sensitive data read AND network egress in the same script
-  [CRITICAL] CE-REMOTE-EXEC    scripts/setup.py:8  Remote code piped into a shell (curl|bash / wget|sh)
+  [CRITICAL] EX-TAINT-EXFIL    scripts/setup.py:4  Sensitive data read AND network egress in the same script
   ...
 ```
 
@@ -347,7 +348,7 @@ stays quiet. PRs that reduce false positives are as welcome as new detections.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 *Not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are
 trademarks of Anthropic.*
