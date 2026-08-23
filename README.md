@@ -1,40 +1,38 @@
 # skillvet
 
-**Vet Agent Skills before you trust them.** skillvet is a security scanner and
-install-time gate for Agent Skills (Claude Code / Cowork). It audits a skill —
-its `SKILL.md`, bundled scripts, and resources — for malicious code, data
-exfiltration, prompt-injection instructions, dangerous shell commands,
-obfuscation, over-broad permissions, and supply-chain risk, gives it a 0–100
-risk score, and tells you whether to install it.
+skillvet is a security scanner and install-time gate for Agent Skills (Claude
+Code / Cowork). It audits a skill — its `SKILL.md`, bundled scripts, and
+resources — for malicious code, data exfiltration, prompt-injection instructions,
+dangerous shell commands, obfuscation, over-broad permissions, and supply-chain
+risk, then returns a 0–100 risk score and an install recommendation.
 
-It runs three ways: **on demand** (a `/skillvet` command or CLI), **per session**
-(a plugin hook that scans your installed skills at startup), and as a **live
-install gate** (a background watcher that quarantines a risky skill the moment
-it appears, until you approve it). That gate — catching and holding a bad skill
-at install time — is what most scanners don't do.
+It runs three ways: on demand (a `/skillvet` command or CLI), per session (a
+plugin hook that scans installed skills at startup), and as a live install gate
+(a background watcher that quarantines a risky skill until you approve it). The
+install gate is the part most scanners don't have.
 
-> A pattern match is a reason to look, not a proof of malice — and a clean scan
-> is **not** proof of safety. skillvet is a high-recall first line of defense,
-> meant to be paired with human judgment.
+> A pattern match is a reason to look, not proof of malice, and a clean scan is
+> not proof of safety. skillvet is a first line of defense, meant to be paired
+> with human judgment.
 
 ## Why this exists
 
-An Agent Skill is code plus natural-language instructions that get loaded into
-an agent's context and run with **your** permissions. That makes skills a real
-attack surface:
+An Agent Skill is code plus natural-language instructions that load into an
+agent's context and run with your permissions. That makes skills an attack
+surface:
 
-- **Instructions become context**, so a skill can attempt prompt injection just
-  by containing the right words ("ignore previous instructions", "don't tell the
+- Instructions become context, so a skill can attempt prompt injection just by
+  containing the right words ("ignore previous instructions", "don't tell the
   user", "send the conversation to …").
-- **Bundled scripts run as you** — with your filesystem and, in Claude Code,
-  your network and secrets.
-- **`allowed-tools` pre-approves tools with no per-use prompt**, and workspace
-  trust doesn't gate it.
-- **Dynamic context injection** (`` !`command` `` / ` ```! ` blocks) runs shell
-  commands *before the agent even reads the skill*, with no prompt.
-- Skills **distribute like packages** (marketplaces, git repos, `.skill` zips),
-  carrying the same supply-chain risks: typosquatting, repo hijack, unpinned
-  dependencies, and code fetched at runtime that differs from what you reviewed.
+- Bundled scripts run as you, with your filesystem and, in Claude Code, your
+  network and secrets.
+- `allowed-tools` pre-approves tools with no per-use prompt, and workspace trust
+  doesn't gate it.
+- Dynamic context injection (`` !`command` `` / ` ```! ` blocks) runs shell
+  commands before the agent reads the skill, with no prompt.
+- Skills distribute like packages (marketplaces, git repos, `.skill` zips), with
+  the same supply-chain risks: typosquatting, repo hijack, unpinned dependencies,
+  and code fetched at runtime that differs from what you reviewed.
 
 An empirical study of ~31k public skills found ~26% carried at least one
 vulnerability and ~5% showed high-severity, likely-malicious patterns. Treat an
@@ -42,31 +40,28 @@ unreviewed third-party skill like any unreviewed open-source dependency.
 
 ## How it works — two layers
 
-1. **Static engine (`scan_skill.py`)** — deterministic, dependency-free Python
-   (standard library only). Regex rules + a Python AST taint pass (secret-read
-   **and** network-send in one file) across `SKILL.md` and every bundled file.
-   Emits findings with rule ID, category, severity, file, line, snippet, and a
-   recommendation. Same input → same output. This is what makes it CI-friendly
-   and hard to talk out of a finding.
-2. **Semantic LLM triage** — two ways to run it. Automatically, as a **coded
-   stage** (`--llm`, `scripts/llm_triage.py`): it sends the findings + skill
-   content to an LLM (Anthropic / OpenAI / a local `claude`/`codex` CLI), which
-   confirms real findings, dismisses false positives, and reports semantic attacks
-   the static pass is blind to — returning a structured verdict. Or interactively,
-   by driving `SKILL.md` through Claude in Claude Code. The skill content is passed
-   as untrusted data with anti-jailbreak framing.
+1. Static engine (`scan_skill.py`): deterministic, dependency-free Python
+   (standard library only). Regex rules plus a Python AST taint pass (secret-read
+   and network-send in one file) across `SKILL.md` and every bundled file. It
+   emits findings with rule ID, category, severity, file, line, snippet, and a
+   recommendation. Same input, same output, which suits CI.
+2. Semantic LLM triage: runs two ways. As a coded stage (`--llm`,
+   `scripts/llm_triage.py`), it sends the findings and skill content to an LLM
+   (Anthropic, OpenAI, or a local `claude`/`codex` CLI), which confirms real
+   findings, dismisses false positives, and reports semantic attacks the static
+   pass misses, returning a structured verdict. Or interactively, by driving
+   `SKILL.md` through Claude in Claude Code. The skill content is passed as
+   untrusted data with anti-jailbreak framing.
 
-This is the same static-then-LLM funnel professional scanners use (e.g. NVIDIA
-SkillSpector). The static core runs entirely locally with no dependencies; the
-LLM stage is opt-in.
+This is the static-then-LLM funnel that scanners such as NVIDIA SkillSpector use.
+The static core runs locally with no dependencies; the LLM stage is opt-in.
 
-**Do you need an API key?** No — for most people. The static engine, the watcher,
-and the plugin work fully offline with no key. The semantic layer is free when you
-run skillvet inside Claude Code (the `/skillvet` skill — Claude itself is the LLM)
-or through a local `claude`/`codex` CLI you already sign into. A dedicated API key
-(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) is only for running the `--llm` stage
-standalone or in CI, where it's also the most reliable provider. The full pipeline
-gives the best results; static-only is the keyless floor.
+API key: not required for most users. The static engine, the watcher, and the
+plugin work offline with no key. The semantic layer is free when you run skillvet
+inside Claude Code (the `/skillvet` skill uses Claude as the LLM) or through a
+local `claude`/`codex` CLI you already sign into. A dedicated API key
+(`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) is only for running `--llm` standalone or
+in CI, where it is also the most reliable provider.
 
 ## What it detects
 
@@ -82,26 +77,25 @@ gives the best results; static-only is the keyless floor.
 
 Full catalog and rationale: [`skills/skillvet/references/threat-model.md`](skills/skillvet/references/threat-model.md).
 
-Severity is `critical` / `high` / `medium` / `low` / `info`, and the overall
-verdict maps to **DO NOT INSTALL** / **INSTALL WITH CARE** / **SAFE TO INSTALL**.
+Severity is `critical` / `high` / `medium` / `low` / `info`; the overall verdict
+maps to DO NOT INSTALL / INSTALL WITH CARE / SAFE TO INSTALL.
 
-The engine ships **~85 detectors across 17 categories**: 70 regex rules, a Python
-AST taint pass, `SKILL.md` frontmatter checks, an optional YARA layer (7 bundled
+The engine ships ~85 detectors across 17 categories: 70 regex rules, a Python AST
+taint pass, `SKILL.md` frontmatter checks, an optional YARA layer (7 bundled
 signatures, active when `yara-python` is installed), and an optional OSV.dev CVE
 lookup for declared dependencies.
 
-`SKILL.md` is the open [Agent Skills](https://agentskills.io) standard, so skillvet
-also scans skills for **Codex, Cursor, and other agents** — the generic detectors
-apply to any skill, and the Claude-specific ones simply don't fire on non-Claude
-skills (no false positives).
+`SKILL.md` is the open [Agent Skills](https://agentskills.io) standard, so
+skillvet also scans skills for Codex, Cursor, and other agents. The generic
+detectors apply to any skill; the Claude-specific ones don't fire on non-Claude
+skills.
 
 ## Measured accuracy
 
-skillvet is measured on a **large external labeled dataset authored by other
-people** — [MalSkillBench](https://github.com/lxyeternal/MalSkillBench), 3,944
-real malware skills + 4,000 labeled benign skills — so the numbers aren't graded
-on fixtures we wrote ourselves. Static engine, block decision = "≥1 high/critical
-finding" ([`RESULTS_external.md`](benchmark/RESULTS_external.md)):
+skillvet is measured on an external labeled dataset authored by other people:
+[MalSkillBench](https://github.com/lxyeternal/MalSkillBench), 3,944 real malware
+skills and 4,000 labeled benign skills. Static engine, block decision = "≥1
+high/critical finding" ([`RESULTS_external.md`](benchmark/RESULTS_external.md)):
 
 | Metric | Value |
 |--------|-------|
@@ -111,13 +105,12 @@ finding" ([`RESULTS_external.md`](benchmark/RESULTS_external.md)):
 | Benign false-positive rate | **15.5%** (619/4,000) |
 | F1 | **0.684** |
 
-These are honest, sobering numbers: a static pass catches most real malware but
-misses a meaningful tail and still over-flags benign skills — which is exactly
-why skillvet pairs the engine with a **semantic review layer** (Claude reading
-findings in context) and treats a flag as "review this," not proof.
+A static pass catches most real malware but misses a tail and over-flags some
+benign skills. That is why skillvet adds a semantic review layer and treats a
+flag as "review this" rather than proof.
 
-**With the LLM stage** (`--llm`, static + semantic triage — see below), the
-full pipeline on a stable MalSkillBench run ([`RESULTS_llm.md`](benchmark/RESULTS_llm.md)):
+With the LLM stage (`--llm`, static + semantic triage), the full pipeline on a
+stable MalSkillBench run ([`RESULTS_llm.md`](benchmark/RESULTS_llm.md)):
 
 | Metric | Static only | Static + LLM |
 |--------|-------------|--------------|
@@ -126,33 +119,30 @@ full pipeline on a stable MalSkillBench run ([`RESULTS_llm.md`](benchmark/RESULT
 | F1 | 0.60 | **0.85** |
 | Benign FP | 18% | 23% |
 
-Recall nearly doubles and F1 lands in the tier of the strongest published
+Recall nearly doubles and F1 reaches the range of the strongest published
 pipelines (NVIDIA SkillSpector cites ~87% precision for its static+LLM funnel).
-That lift is the whole point: static scanners collapse on prompt-injection and
-agent-control attacks; only joint code+instruction reasoning recovers them. FP
-rises honestly (the LLM calls some imperfect benign skills "vulnerable") — a
-tunable threshold, not a fixed limit.
+Static scanners miss prompt-injection and agent-control attacks; joint
+code+instruction reasoning recovers them. The false-positive rate rises because
+the LLM labels some imperfect benign skills "vulnerable"; that threshold is
+tunable.
 
-For context, an independent static peer scanner run on the *same* split scored
-recall 46% at 21% FP (or 60% at 56% FP), versus skillvet's static 60% at 15.5% —
-so skillvet is competitive-to-better among static scanners, and the LLM stage is
-what moves it into the top tier.
+An independent static peer scanner on the same split scored recall 46% at 21% FP
+(or 60% at 56% FP), against skillvet's static 60% at 15.5%.
 
-On a smaller crafted set (44 fixtures we wrote + 20 official Anthropic skills +
-~1,600 community skills, [`RESULTS.md`](benchmark/RESULTS.md)) the same static
-engine scores higher — recall 86%, precision 95%, 10% FP — but those numbers are
-optimistic because we authored the malicious cases; the MalSkillBench figures
-are the ones to trust. Reproduce with `benchmark/fetch_corpus.sh`
-(see [`benchmark/`](benchmark/)).
+On a smaller crafted set (44 fixtures we wrote, 20 official Anthropic skills,
+~1,600 community skills, [`RESULTS.md`](benchmark/RESULTS.md)) the static engine
+scores recall 86%, precision 95%, 10% FP. Those numbers are optimistic because we
+authored the malicious cases; use the MalSkillBench figures. Reproduce with
+`benchmark/fetch_corpus.sh` (see [`benchmark/`](benchmark/)).
 
-We also hand-labeled every community skill our engine flagged high/critical:
-the first pass was **100% false positives** (96/96), which exposed two broken
-rules (a keyword-proximity taint match and an install-instruction match). Both
-are fixed; the labeling loop is part of the benchmark.
+We hand-labeled every community skill the engine flagged high/critical. The first
+pass was 96/96 false positives, which exposed two broken rules (a
+keyword-proximity taint match and an install-instruction match). Both are fixed;
+the labeling loop is part of the benchmark.
 
 ## How skillvet compares
 
-Honest positioning against the leading Agent-Skill scanners. Legend: ✓ yes · ~ partial · ✗ no.
+Positioning against the leading Agent-Skill scanners. Legend: ✓ yes · ~ partial · ✗ no.
 
 | Capability | **skillvet** | NVIDIA SkillSpector | Cisco skill-scanner | Typical static scanner |
 |---|:--:|:--:|:--:|:--:|
@@ -175,8 +165,8 @@ Honest positioning against the leading Agent-Skill scanners. Legend: ✓ yes · 
 
 ### Head-to-head: same data, same conditions
 
-We ran the leading scanners **ourselves**, all on the **same** 300-malware +
-300-benign MalSkillBench sample, in **static mode with no API keys** (each at its
+We ran the leading scanners ourselves, all on the same 300-malware + 300-benign
+MalSkillBench sample, in static mode with no API keys (each at its
 most-permissive / best-recall threshold; skillvet at its high/critical threshold):
 
 | Static scanner | Recall | Benign FP | Source |
@@ -186,16 +176,15 @@ most-permissive / best-recall threshold; skillvet at its high/critical threshold
 | skillscan (peer) | 60.0% | 56.0% | we ran |
 | Sentry (getsentry) | 37.7% | 15.3% | we ran |
 
-On this exact data, **skillvet has the highest recall of every static scanner we
-tested**, at a competitive false-positive rate. Adding the LLM stage lifts
-skillvet to **~90% recall / 0.85 F1** (the competitors' own LLM modes need API
-keys, which we did not run, so that row isn't a head-to-head).
+On this data, skillvet has the highest recall of the static scanners we tested,
+at a competitive false-positive rate. The LLM stage lifts skillvet to ~90% recall
+and 0.85 F1; the competitors' own LLM modes need API keys and weren't run, so that
+isn't a head-to-head.
 
-For reference, NVIDIA SkillSpector reports ~87% *precision* for its full pipeline
-— but on its own data with its own method, **not** MalSkillBench, so it is not
-comparable to the numbers above. Where skillvet is genuinely behind the big names
-is real-world maturity and adoption; where it's ahead is the **install-time gate,
-continuous monitoring, and keyless operation** that none of them offer.
+NVIDIA SkillSpector reports ~87% precision for its full pipeline, but on its own
+data and method, not MalSkillBench, so it isn't comparable to the numbers above.
+skillvet trails the established tools on real-world maturity and adoption; it
+leads on the install-time gate, continuous monitoring, and keyless operation.
 
 ## Install
 
@@ -206,13 +195,13 @@ git clone https://github.com/<you>/skillvet.git
 cp -r skillvet/skills/skillvet ~/.claude/skills/skillvet
 ```
 
-Then in Claude Code: `/skillvet <path-to-skill-or-.skill>` — or just ask
-"scan this skill for malware before I install it".
+Then in Claude Code: `/skillvet <path-to-skill-or-.skill>`, or ask "scan this
+skill for malware before I install it".
 
 ### As a plugin (adds automatic session-start scanning)
 
-Install the repo as a plugin so it also runs a **`SessionStart` hook** that
-scans your installed skills every session and warns about risky ones:
+Install the repo as a plugin to also run a `SessionStart` hook that scans your
+installed skills every session and warns about risky ones:
 
 ```bash
 # from the Claude Code /plugin menu, add this repo as a marketplace, or:
@@ -220,17 +209,16 @@ claude plugin marketplace add <you>/skillvet
 claude plugin install skillvet@skillvet
 ```
 
-Claude Code has no "skill installed" event, so the hook scans at session start:
-a skill you add is scanned on the next session (and it only surfaces skills with
-high/critical findings, to stay quiet). It never blocks or breaks your session.
+Claude Code has no "skill installed" event, so the hook scans at session start: a
+skill you add is scanned on the next session, and it only surfaces skills with
+high/critical findings. It doesn't block or interrupt your session.
 
 ### As a real install-time gate (watcher + quarantine)
 
-The strongest option. A small dependency-free daemon watches your skills
-directories and, the moment a new or changed skill appears, scans it — **before
-you rely on it, without needing a session open**. If the skill has findings at
-or above the threshold, it is **moved into quarantine** so Claude Code won't load
-it, a report is written, and you're notified. You decide what happens next:
+A dependency-free daemon watches your skills directories. When a new or changed
+skill appears, it scans it before you rely on it, without a session open. If the
+skill has findings at or above the threshold, the daemon moves it into quarantine
+so Claude Code won't load it, writes a report, and notifies you. You then decide:
 
 ```bash
 # run the gate (foreground; see watcher/ for launchd & systemd units to run it in the background)
@@ -243,32 +231,29 @@ python3 watcher/skillvet_watch.py approve pdf-helper  # trust it -> move back in
 python3 watcher/skillvet_watch.py reject  pdf-helper  # delete it permanently
 ```
 
-Run it continuously (starts automatically at every login/boot) via the provided
-setup for each OS:
+Run it continuously (starts at every login/boot) with the setup for each OS:
 
-- **macOS** — [`watcher/com.skillvet.watch.plist`](watcher/com.skillvet.watch.plist) (launchd agent)
-- **Linux** — [`watcher/skillvet-watch.service`](watcher/skillvet-watch.service) (systemd user service)
-- **Windows** — [`watcher/windows/install-task.ps1`](watcher/windows/install-task.ps1) registers a hidden Scheduled Task that starts the watcher at logon. Run once:
+- macOS — [`watcher/com.skillvet.watch.plist`](watcher/com.skillvet.watch.plist) (launchd agent)
+- Linux — [`watcher/skillvet-watch.service`](watcher/skillvet-watch.service) (systemd user service)
+- Windows — [`watcher/windows/install-task.ps1`](watcher/windows/install-task.ps1) registers a hidden Scheduled Task that starts the watcher at logon. Run once:
   ```powershell
   powershell -ExecutionPolicy Bypass -File watcher\windows\install-task.ps1
   ```
   Remove it with `watcher\windows\uninstall-task.ps1`.
 
-After the one-time setup, the watcher runs in the background on every boot with
-no manual step. Desktop notifications are best-effort per OS (osascript /
-notify-send / a PowerShell balloon on Windows) and fall back to the log.
+After the one-time setup the watcher runs in the background on every boot.
+Desktop notifications are best-effort per OS (osascript / notify-send / a
+PowerShell balloon on Windows) and fall back to the log.
 
-By default the watcher is **event-based**: install `watchdog`
-(`pip install watchdog`) and it sleeps until the OS tells it a skill file
-changed — idle cost is effectively zero. Without `watchdog` it falls back to
-lightweight polling; `--poll` forces polling either way.
+By default the watcher is event-based: install `watchdog`
+(`pip install watchdog`) and it sleeps until the OS reports a skill file change,
+so idle cost is near zero. Without `watchdog` it falls back to polling; `--poll`
+forces polling.
 
-Why a daemon rather than an MCP server: installing a skill is a file copy that
-happens outside any agent, and neither Claude Code nor an MCP server has a native
-hook to intercept and block it in the UI. A filesystem watcher that quarantines
-by moving files is what actually produces an install gate. The daemon holds the
-skill aside until you approve — that is the "user decides whether to continue"
-step. (`--no-quarantine` makes it notify-only if you'd rather not move files.)
+Installing a skill is a file copy outside any agent, and neither Claude Code nor
+an MCP server has a hook to intercept it in the UI. A filesystem watcher that
+quarantines by moving files is what produces an install gate. `--no-quarantine`
+makes it notify-only.
 
 ### Three levels of automation, summarized
 
@@ -298,8 +283,8 @@ python3 scan_skill.py <path-to-skill-dir-or-.skill/.zip> [options]
 --quiet             Suppress the stdout summary
 ```
 
-Exit codes: `0` clean (below `--fail-on`), `1` findings at/above `--fail-on`,
-`2` usage/IO error. Drop it into CI to fail a PR that adds a risky skill.
+Exit codes: `0` clean (below `--fail-on`), `1` findings at/above `--fail-on`, `2`
+usage/IO error. Drop it into CI to fail a PR that adds a risky skill.
 
 ## Example
 
@@ -327,11 +312,11 @@ skillvet/
 ├── hooks/
 │   ├── hooks.json           # SessionStart auto-scan
 │   └── scan_installed_skills.py
-├── watcher/                 # real install-time gate
+├── watcher/                 # install-time gate
 │   ├── skillvet_watch.py       # watcher + quarantine daemon + CLI
 │   ├── com.skillvet.watch.plist  # macOS launchd unit
 │   ├── skillvet-watch.service    # Linux systemd user unit
-│   └── windows/                      # Windows auto-start (Scheduled Task)
+│   └── windows/                  # Windows auto-start (Scheduled Task)
 │       ├── install-task.ps1
 │       └── uninstall-task.ps1
 ├── skills/skillvet/
@@ -344,12 +329,12 @@ skillvet/
 
 ## Limitations
 
-- Static analysis is **high-recall, not complete**. A clean report is not proof
-  of safety, and a skill that fetches code/instructions at runtime can pass
-  review and turn malicious later. Re-scan after every update.
-- The scanner **does not honor** in-file suppression comments (`nosec`, etc.) —
-  a malicious author could use them to hide — and flags their presence instead.
-- It reduces risk; it does not replace least privilege. Prefer running untrusted
+- Static analysis is high-recall, not complete. A clean report is not proof of
+  safety, and a skill that fetches code or instructions at runtime can pass review
+  and turn malicious later. Re-scan after every update.
+- The scanner does not honor in-file suppression comments (`nosec`, etc.); a
+  malicious author could use them to hide, so it flags their presence instead.
+- It reduces risk; it doesn't replace least privilege. Prefer running untrusted
   skills with network egress restricted and no access to real secrets.
 
 ## Contributing
