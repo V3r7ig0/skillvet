@@ -183,7 +183,15 @@ RULES = [
     dict(id="PI-SECRECY", cat="prompt-injection", sev="high", applies="markdown",
          title="Instruction to act covertly / hide actions from the user",
          rec="A skill that tells the agent to conceal what it does is acting against the user. Remove and distrust.",
-         pat=_r(r"(?:without\s+(?:telling|informing|asking|notifying)\s+the\s+user|(?:silently|covertly|secretly)\s+(?:send|exfiltrat|upload|forward|transmit|run|execute|delete|copy|collect|post)|do\s+not\s+(?:tell|inform|log|report|mention)\s+the\s+user|hide\s+(?:this|it|your\s+actions?|the\s+upload)\s+from|keep\s+this\s+(?:secret|hidden)|delete\s+(?:the\s+)?(?:logs|history|evidence))")),
+         # "without asking the user" is ordinary English for "needs no user
+         # input", so on its own it is not evidence of concealment -- it has
+         # to attach to an action the agent performs, the way every other
+         # alternative here already does. telling/informing/notifying carry
+         # the concealment on their own and stay unconditional.
+         # The verb list is deliberately data-movement only: "run" reads as
+         # an agent action in "run it without asking the user" and as plain
+         # description in "it runs unattended, without asking the user".
+         pat=_r(r"(?:(?:send|upload|forward|transmit|delete|copy|collect|exfiltrat|post|share)[^\n]{0,40}without\s+(?:telling|informing|asking|notifying)\s+the\s+user|without\s+(?:telling|informing|notifying)\s+the\s+user|(?:silently|covertly|secretly)\s+(?:send|exfiltrat|upload|forward|transmit|run|execute|delete|copy|collect|post)|do\s+not\s+(?:tell|inform|log|report|mention)\s+the\s+user|hide\s+(?:this|it|your\s+actions?|the\s+upload)\s+from|keep\s+this\s+(?:secret|hidden)|delete\s+(?:the\s+)?(?:logs|history|evidence))")),
     dict(id="PI-TOOL-COERCE", cat="prompt-injection", sev="medium", applies="markdown",
          title="Instruction pushing the agent toward dangerous tool use / auto-approval",
          rec="Descriptions that coerce the agent to run commands, disable checks, or auto-approve should be reviewed.",
