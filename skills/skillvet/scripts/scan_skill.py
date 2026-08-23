@@ -40,6 +40,9 @@ import zipfile
 
 SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
+# The YAML frontmatter block of a SKILL.md, including its closing "---".
+FRONTMATTER_RE = re.compile(r"^\s*---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
 # File extensions we treat as executable/script content (deeper checks apply).
 CODE_EXTS = {".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts",
              ".rb", ".pl", ".php", ".ps1", ".psm1", ".bat", ".cmd", ".fish"}
@@ -240,7 +243,7 @@ RULES = [
          pat=_r(r"(?:automatically|without\s+(?:asking|confirmation|approval|checking))\s+(?:delete|remove|deploy|push|commit|send|email|transfer|pay|purchase|overwrite)|(?:delete|deploy|push|send)\s+.{0,40}\bwithout\s+(?:asking|confirming)")),
 
     # ---- Trigger abuse ----
-    dict(id="TR-BROAD", cat="trigger-abuse", sev="low", applies="markdown",
+    dict(id="TR-BROAD", cat="trigger-abuse", sev="low", applies="frontmatter",
          title="Overly broad trigger ('use for everything / any task / always')",
          rec="A description that claims to handle any task grabs invocations away from safer paths. Scope the trigger.",
          pat=_r(r"use\s+(?:this\s+)?(?:for\s+)?(?:everything|any(?:thing| task| request| time)|all\s+tasks?)|always\s+use\s+this\s+skill|for\s+every\s+(?:task|request|prompt)")),
@@ -415,6 +418,10 @@ def rule_applies(rule, kind):
         return kind in ("code", "markdown", "text")
     if a == "text":
         return kind in ("code", "markdown", "text")
+    # "frontmatter" is markdown narrowed to the declaration block; the match
+    # itself is confined to that span in scan_text_file.
+    if a == "frontmatter":
+        return kind == "markdown"
     return a == kind
 
 
@@ -458,7 +465,17 @@ def scan_text_file(rel, abspath, findings):
     for rule in RULES:
         if not rule_applies(rule, kind):
             continue
-        for m in rule["pat"].finditer(content):
+        # A frontmatter-scoped rule judges what the skill DECLARES about
+        # itself, not the prose that happens to follow the declaration.
+        # Searching a prefix of `content` keeps the line numbers below right.
+        if rule["applies"] == "frontmatter":
+            fm = FRONTMATTER_RE.match(content)
+            if not fm:
+                continue
+            haystack = content[:fm.end()]
+        else:
+            haystack = content
+        for m in rule["pat"].finditer(haystack):
             line_no = content.count("\n", 0, m.start()) + 1
             raw_line = lines[line_no - 1] if 0 < line_no <= len(lines) else m.group()
             sev = rule["sev"]
@@ -696,7 +713,7 @@ def check_frontmatter(root, findings):
             content = f.read()
     except OSError:
         return
-    fm = re.match(r"^\s*---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+    fm = FRONTMATTER_RE.match(content)
     if not fm:
         return
     block = fm.group(1)
