@@ -173,7 +173,12 @@ RULES = [
     dict(id="SC-UNPINNED-PEP723", cat="supply-chain", sev="low", applies="code",
          title="Inline (PEP 723) or requirements dependency without a pinned version",
          rec="Unpinned dependencies can be hijacked via a malicious update. Pin exact versions (and hashes where possible).",
-         pat=_r(r"^\s*#\s*(?:dependencies|requires-python)\s*=|^\s*[A-Za-z0-9_.-]+\s*(?:>=|>|\^|~=|\*)\s*", re.MULTILINE)),
+         # Horizontal whitespace only: \s* could span a newline, so a line
+         # of prose followed by a line starting with "*" read as "package
+         # at version". The name must also start with a letter ("-" was
+         # being accepted as a package name), and the operator must be
+         # followed by a digit, or be a "*" that ends the line.
+         pat=_r(r"^[^\S\n]*#[^\S\n]*(?:dependencies|requires-python)[^\S\n]*=|^[^\S\n]*[A-Za-z][A-Za-z0-9_.-]*[^\S\n]*(?:(?:>=|>|\^|~=)[^\S\n]*[0-9]|\*[^\S\n]*$)", re.MULTILINE)),
 
     # ---- Prompt injection (targeting the agent through SKILL.md/text) ----
     dict(id="PI-OVERRIDE", cat="prompt-injection", sev="high", applies="markdown",
