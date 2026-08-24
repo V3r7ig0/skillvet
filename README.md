@@ -6,10 +6,21 @@ resources) for malicious code, data exfiltration, prompt-injection instructions,
 dangerous shell commands, obfuscation, over-broad permissions, and supply-chain
 risk. It returns a 0 to 100 risk score and an install recommendation.
 
-It runs three ways: on demand (a `/skillvet` command or CLI), per session (a
-plugin hook that scans installed skills at startup), and as a live install gate
-(a background watcher that quarantines a risky skill until you approve it). The
-install gate is the part most scanners don't have.
+It runs three ways: on demand (a `/skillvet` command or CLI, a quick manual
+check before you trust a skill), per session (a plugin hook that scans installed
+skills at startup), and as a live install gate (a background watcher that
+quarantines a risky skill until you approve it). The install gate is the part
+most scanners don't have.
+
+**What the watcher covers, and what it misses.** The watcher and the session
+hook guard skills stored on your local disk: `~/.claude/skills` (Claude Code)
+and the Codex, Cursor, and project-local skill folders. When you install a skill
+through the Claude Desktop Skills UI, Claude stores it in your account in the
+cloud, not on disk, so the watcher never sees it. Scan those yourself before you
+trust them. Run `/skillvet` or the CLI on the skill's `.zip` or folder, or ask
+Claude to scan it inside a Cowork session. In Cowork, Claude runs the static
+scan and then reads the code itself, so the host agent gives you an LLM-grade
+review at no extra cost.
 
 ![skillvet quarantining a malicious skill at install time](assets/skillvet-demo.gif)
 
@@ -226,7 +237,10 @@ so Claude Code won't load it, writes a report, and notifies you. You then decide
 # run the gate (foreground; see watcher/ for launchd & systemd units to run it in the background)
 python3 watcher/skillvet_watch.py watch --fail-on high
 
-# a risky skill you install is pulled out of ~/.claude/skills into .quarantine/ within seconds
+# a risky skill that lands in a watched LOCAL folder (Claude Code, a manual or git
+# install, or another agent like Codex or Cursor) moves into .quarantine/ within seconds.
+# Skills installed through the Claude Desktop UI live in the cloud, not on disk, so the
+# watcher never sees them. Scan those with /skillvet or in a Cowork session.
 python3 watcher/skillvet_watch.py status              # list what's quarantined
 python3 watcher/skillvet_watch.py report  pdf-helper  # read its scan report
 python3 watcher/skillvet_watch.py approve pdf-helper  # trust it -> move back into place
