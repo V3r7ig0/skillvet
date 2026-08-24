@@ -42,6 +42,26 @@ SEVERITY_ORDER = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 # The YAML frontmatter block of a SKILL.md, including its closing "---".
 FRONTMATTER_RE = re.compile(r"^\s*---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+# The console output carries a few non-ASCII characters, and a scanned path
+# can carry any character at all. On a console whose encoding cannot
+# represent them -- cp1252/cp1254/cp932 are the default on non-English
+# Windows -- print() raises UnicodeEncodeError and the process dies AFTER
+# the scan has finished, with exit code 1. A caller cannot tell that apart
+# from "findings were found", so a CI step reads a crash as a result.
+_ASCII_FALLBACK = {"\u2014": "-", "\u2192": "->", "\u2717": "x", "\u2713": "v",
+                   "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'}
+
+
+def out(text=""):
+    """print() that degrades characters instead of the run."""
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        text.encode(enc)
+    except (UnicodeEncodeError, LookupError):
+        for ch, rep in _ASCII_FALLBACK.items():
+            text = text.replace(ch, rep)
+        text = text.encode(enc, "replace").decode(enc, "replace")
+    print(text)
 
 # File extensions we treat as executable/script content (deeper checks apply).
 CODE_EXTS = {".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts",
@@ -176,7 +196,12 @@ RULES = [
     dict(id="SC-UNPINNED-PEP723", cat="supply-chain", sev="low", applies="code",
          title="Inline (PEP 723) or requirements dependency without a pinned version",
          rec="Unpinned dependencies can be hijacked via a malicious update. Pin exact versions (and hashes where possible).",
-         pat=_r(r"^\s*#\s*(?:dependencies|requires-python)\s*=|^\s*[A-Za-z0-9_.-]+\s*(?:>=|>|\^|~=|\*)\s*", re.MULTILINE)),
+         # Horizontal whitespace only: \s* could span a newline, so a line
+         # of prose followed by a line starting with "*" read as "package
+         # at version". The name must also start with a letter ("-" was
+         # being accepted as a package name), and the operator must be
+         # followed by a digit, or be a "*" that ends the line.
+         pat=_r(r"^[^\S\n]*#[^\S\n]*(?:dependencies|requires-python)[^\S\n]*=|^[^\S\n]*[A-Za-z][A-Za-z0-9_.-]*[^\S\n]*(?:(?:>=|>|\^|~=)[^\S\n]*[0-9]|\*[^\S\n]*$)", re.MULTILINE)),
 
     # ---- Prompt injection (targeting the agent through SKILL.md/text) ----
     dict(id="PI-OVERRIDE", cat="prompt-injection", sev="high", applies="markdown",
@@ -186,7 +211,15 @@ RULES = [
     dict(id="PI-SECRECY", cat="prompt-injection", sev="high", applies="markdown",
          title="Instruction to act covertly / hide actions from the user",
          rec="A skill that tells the agent to conceal what it does is acting against the user. Remove and distrust.",
-         pat=_r(r"(?:without\s+(?:telling|informing|asking|notifying)\s+the\s+user|(?:silently|covertly|secretly)\s+(?:send|exfiltrat|upload|forward|transmit|run|execute|delete|copy|collect|post)|do\s+not\s+(?:tell|inform|log|report|mention)\s+the\s+user|hide\s+(?:this|it|your\s+actions?|the\s+upload)\s+from|keep\s+this\s+(?:secret|hidden)|delete\s+(?:the\s+)?(?:logs|history|evidence))")),
+         # "without asking the user" is ordinary English for "needs no user
+         # input", so on its own it is not evidence of concealment -- it has
+         # to attach to an action the agent performs, the way every other
+         # alternative here already does. telling/informing/notifying carry
+         # the concealment on their own and stay unconditional.
+         # The verb list is deliberately data-movement only: "run" reads as
+         # an agent action in "run it without asking the user" and as plain
+         # description in "it runs unattended, without asking the user".
+         pat=_r(r"(?:(?:send|upload|forward|transmit|delete|copy|collect|exfiltrat|post|share)[^\n]{0,40}without\s+(?:telling|informing|asking|notifying)\s+the\s+user|without\s+(?:telling|informing|notifying)\s+the\s+user|(?:silently|covertly|secretly)\s+(?:send|exfiltrat|upload|forward|transmit|run|execute|delete|copy|collect|post)|do\s+not\s+(?:tell|inform|log|report|mention)\s+the\s+user|hide\s+(?:this|it|your\s+actions?|the\s+upload)\s+from|keep\s+this\s+(?:secret|hidden)|delete\s+(?:the\s+)?(?:logs|history|evidence))")),
     dict(id="PI-TOOL-COERCE", cat="prompt-injection", sev="medium", applies="markdown",
          title="Instruction pushing the agent toward dangerous tool use / auto-approval",
          rec="Descriptions that coerce the agent to run commands, disable checks, or auto-approve should be reviewed.",
@@ -1095,25 +1128,25 @@ def main(argv):
             f.write(render_sarif(target_name, ordered))
 
     if not args.quiet:
-        print(f"Scanned {file_count} files in '{target_name}'.")
-        print(f"Risk score: {score}/100 — {band} → {recommendation}")
-        print(f"Findings: critical={counts['critical']} high={counts['high']} "
+        out(f"Scanned {file_count} files in '{target_name}'.")
+        out(f"Risk score: {score}/100 — {band} → {recommendation}")
+        out(f"Findings: critical={counts['critical']} high={counts['high']} "
               f"medium={counts['medium']} low={counts['low']} info={counts['info']}"
               + (f"  (suppressed {len(suppressed)})" if suppressed else ""))
-        print(f"Verdict: {verdict(counts)}")
+        out(f"Verdict: {verdict(counts)}")
         if llm_summary:
-            print(f"LLM: {llm_summary.get('verdict','?')} (conf {llm_summary.get('confidence','?')}) — "
+            out(f"LLM: {llm_summary.get('verdict','?')} (conf {llm_summary.get('confidence','?')}) — "
                   f"{llm_summary.get('reasoning','')} "
                   f"[dismissed {len(llm_summary.get('dismissed',[]))}, added {llm_summary.get('added',0)}]")
         if not args.json_out and not args.md_out and not args.sarif_out:
             for f in ordered:
                 loc = f["file"] if f["line"] in (0, None) else f'{f["file"]}:{f["line"]}'
-                print(f'  [{f["severity"].upper():8}] {f["rule"]:20} {loc}  {f["title"]}')
+                out(f'  [{f["severity"].upper():8}] {f["rule"]:20} {loc}  {f["title"]}')
         if args.show_suppressed and suppressed:
-            print("Suppressed by baseline:")
+            out("Suppressed by baseline:")
             for f in suppressed:
                 loc = f["file"] if f["line"] in (0, None) else f'{f["file"]}:{f["line"]}'
-                print(f'  [suppressed] {f["rule"]:20} {loc}  {f["title"]}')
+                out(f'  [suppressed] {f["rule"]:20} {loc}  {f["title"]}')
 
     fail_lvl = SEVERITY_ORDER[args.fail_on]
     if any(SEVERITY_ORDER[f["severity"]] >= fail_lvl for f in findings):
