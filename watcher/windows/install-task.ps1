@@ -1,5 +1,5 @@
 <#
-  skillvet — Windows auto-start installer.
+  skillvet - Windows auto-start installer.
 
   Registers a Scheduled Task that starts the watcher automatically every time
   you log in, running hidden in the background. Run this ONCE.
@@ -37,7 +37,7 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
               -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-    -Settings $settings -Description "skillvet — watch and quarantine risky Agent Skills" `
+    -Settings $settings -Description "skillvet - watch and quarantine risky Agent Skills" `
     -Force | Out-Null
 
 Write-Host "Installed scheduled task '$TaskName'."

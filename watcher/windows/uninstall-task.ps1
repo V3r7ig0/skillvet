@@ -1,5 +1,5 @@
 <#
-  skillvet — remove the Windows auto-start task.
+  skillvet - remove the Windows auto-start task.
 
   Usage:
       powershell -ExecutionPolicy Bypass -File .\uninstall-task.ps1
