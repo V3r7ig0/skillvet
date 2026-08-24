@@ -112,7 +112,10 @@ RULES = [
     dict(id="CE-DYNAMIC-EXEC", cat="malicious-code", sev="high", applies="code",
          title="Dynamic code execution (eval / exec / Function constructor)",
          rec="Dynamic execution of strings hides behavior from review. Replace with explicit code.",
-         pat=_r(r"\b(?:eval|exec)\s*\(|\bFunction\s*\(\s*['\"]|\bnew\s+Function\s*\(|\bcompile\s*\([^)]*,\s*['\"]?<|__import__\s*\(")),
+         # Negative lookbehind for a dot/word char so method calls like
+         # regex.exec(...) or child_process.exec(...) don't masquerade as
+         # eval/exec of a string. Bare eval( / exec( still match.
+         pat=_r(r"(?<![.\w])(?:eval|exec)\s*\(|\bnew\s+Function\s*\(|(?<![.\w])Function\s*\(\s*['\"]|\bcompile\s*\([^)]*,\s*['\"]?<|__import__\s*\(")),
     dict(id="CE-OBFUSCATION-B64", cat="obfuscation", sev="high", applies="any",
          title="Base64/hex blob decoded and executed",
          rec="Decoding an encoded blob and running it is a hallmark of hidden payloads. Decode and inspect it.",
@@ -672,6 +675,53 @@ def scan_yara(root, findings, rules_path=None):
     return True
 
 
+def discover_skill_roots(root):
+    """Return the directories that each directly contain a SKILL.md.
+
+    A repo can bundle many independent skills (plus docs, tests, specs and
+    install scripts that are NOT part of any installed skill). A user installs
+    one skill, so we scan each skill's own subtree and ignore everything that
+    is not under a skill. If the given root itself is a skill, it is the only
+    root and its whole tree is scanned as before.
+    """
+    if any(os.path.isfile(os.path.join(root, c)) for c in ("SKILL.md", "skill.md")):
+        return [root]
+    roots = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in (".git", "__pycache__", "node_modules")]
+        if any(fn.lower() == "skill.md" for fn in filenames):
+            roots.append(dirpath)
+            # Do not descend into a skill's own subtree looking for more skills.
+            dirnames[:] = []
+    return roots
+
+
+def scan_skill_tree(root, no_yara=True):
+    """Static scan of one skill directory. Returns a result dict."""
+    findings, file_count, _ = scan_dir(root)
+    check_frontmatter(root, findings)
+    if not no_yara:
+        try:
+            scan_yara(root, findings)
+        except Exception:
+            pass
+    deduped = {}
+    for f in findings:
+        key = (f["rule"], f["file"], f["line"])
+        if key not in deduped:
+            deduped[key] = f
+    findings = list(deduped.values())
+    counts = summarize(findings)
+    ships = any(kind_of(f["file"]) == "code" for f in findings) or _ships_executable(root)
+    score = risk_score(findings, ships)
+    band, rec = score_band(score)
+    ordered = sorted(findings, key=lambda x: (-SEVERITY_ORDER[x["severity"]], x["file"], x["line"]))
+    return dict(target=os.path.basename(os.path.normpath(root)),
+                files_scanned=file_count, risk_score=score, band=band,
+                recommendation=rec, counts=counts, verdict=verdict(counts),
+                findings=ordered)
+
+
 def scan_dir(root):
     findings = []
     file_count = 0
@@ -1036,6 +1086,41 @@ def main(argv):
     else:
         print(f"error: {target} is not a directory or .skill/.zip archive", file=sys.stderr)
         return 2
+
+    # If the target bundles several skills (a collection repo), scan each one
+    # independently and skip everything that is not under a skill (docs, tests,
+    # specs, install scripts). Reporting one blended score for a whole repo is
+    # the main false-positive trap.
+    skill_roots = discover_skill_roots(root)
+    if len(skill_roots) > 1:
+        skills = [scan_skill_tree(rt, no_yara=args.no_yara) for rt in sorted(skill_roots)]
+        worst = max(skills, key=lambda s: s["risk_score"])
+        agg_counts = {k: sum(s["counts"][k] for s in skills) for k in SEVERITY_ORDER}
+        target_name = os.path.basename(os.path.normpath(target))
+        all_findings = [dict(f, skill=s["target"]) for s in skills for f in s["findings"]]
+        if args.json_out:
+            with open(args.json_out, "w", encoding="utf-8") as jf:
+                json.dump(dict(target=target_name, multi=True, skills=skills,
+                               files_scanned=sum(s["files_scanned"] for s in skills),
+                               risk_score=worst["risk_score"], band=worst["band"],
+                               recommendation=worst["recommendation"], counts=agg_counts,
+                               verdict=worst["verdict"],
+                               engines=dict(static=True, yara=False, osv=False, llm=False),
+                               llm=None, findings=all_findings, suppressed=0),
+                          jf, indent=2, ensure_ascii=False)
+        if not args.quiet:
+            out(f"'{target_name}' bundles {len(skills)} skills. Scanned each on its own:")
+            for s in sorted(skills, key=lambda x: -x["risk_score"]):
+                out(f"  {s['risk_score']:3}/100  {s['band']:8} {s['target']}  "
+                    f"(crit={s['counts']['critical']} high={s['counts']['high']} med={s['counts']['medium']})")
+            out(f"Worst skill: {worst['target']} — {worst['band']} → {worst['recommendation']}")
+        if tmpdir:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        fail_lvl = SEVERITY_ORDER[args.fail_on]
+        return 1 if any(SEVERITY_ORDER[f["severity"]] >= fail_lvl for f in all_findings) else 0
+    if len(skill_roots) == 1:
+        root = skill_roots[0]
 
     findings, file_count, _ = scan_dir(root)
     check_frontmatter(root, findings)
