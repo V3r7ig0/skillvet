@@ -1,0 +1,4 @@
+# Local Claude Code session state (personal, not for the public repo)
+.claude/
+__pycache__/
+*.pyc
